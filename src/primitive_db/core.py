@@ -1,6 +1,8 @@
 from primitive_db.constants import ID_COLUMN, VALID_TYPES
+from primitive_db.decorators import confirm_action, handle_db_errors
 
 
+@handle_db_errors
 def create_table(
     metadata: dict, table_name: str, columns: dict[str, str]
 ) -> dict:
@@ -22,6 +24,8 @@ def create_table(
     return metadata
 
 
+@handle_db_errors
+@confirm_action("удаление таблицы")
 def drop_table(metadata: dict, table_name: str) -> dict:
     """Remove a table schema from metadata."""
     if table_name not in metadata:
@@ -30,11 +34,13 @@ def drop_table(metadata: dict, table_name: str) -> dict:
     return metadata
 
 
+@handle_db_errors
 def list_tables(metadata: dict) -> list[str]:
     """Return table names in sorted order."""
     return sorted(metadata)
 
 
+@handle_db_errors
 def insert(
     metadata: dict,
     table_name: str,
@@ -53,6 +59,7 @@ def insert(
     return [*table_data, row]
 
 
+@handle_db_errors
 def select(
     table_data: list[dict], where_clause: dict[str, object] | None = None
 ) -> list[dict]:
@@ -61,6 +68,7 @@ def select(
     return [row for row in table_data if _matches(row, conditions)]
 
 
+@handle_db_errors
 def update(
     table_data: list[dict],
     set_clause: dict[str, object],
@@ -80,6 +88,8 @@ def update(
     return table_data
 
 
+@handle_db_errors
+@confirm_action("удаление записей")
 def delete(
     table_data: list[dict], where_clause: dict[str, object]
 ) -> list[dict]:

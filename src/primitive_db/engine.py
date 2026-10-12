@@ -1,8 +1,11 @@
+import json
+
 import prompt
 from prettytable import PrettyTable
 
 from primitive_db import core
 from primitive_db.constants import ID_COLUMN
+from primitive_db.decorators import create_cacher, handle_db_errors, log_time
 from primitive_db.parser import (
     parse_columns,
     parse_conditions,
@@ -18,6 +21,8 @@ from primitive_db.utils import (
     table_path,
 )
 
+cache_result = create_cacher()
+
 
 def run() -> None:
     """Read and execute database commands until the user exits."""
@@ -30,13 +35,11 @@ def run() -> None:
             return
         if not command:
             continue
-        try:
-            if not execute(command):
-                return
-        except (KeyError, ValueError, FileNotFoundError) as error:
-            print(f"Ошибка: {error}")
+        if execute(command) is False:
+            return
 
 
+@handle_db_errors
 def execute(command: str) -> bool:
     """Execute one command and return false when the session should end."""
     tokens = tokenize(command)
@@ -77,6 +80,8 @@ def _create_table(arguments: list[str]) -> None:
         raise ValueError("Не указано имя таблицы")
     table_name, *column_tokens = arguments
     metadata = core.create_table(load_metadata(), table_name, parse_columns(column_tokens))
+    if metadata is None:
+        return
     save_metadata(metadata)
     save_table_data(table_name, [])
     print(f"Таблица {table_name} успешно создана")
@@ -89,11 +94,14 @@ def _drop_table(arguments: list[str]) -> None:
         raise ValueError("Укажите имя одной таблицы")
     table_name = arguments[0]
     metadata = core.drop_table(load_metadata(), table_name)
+    if metadata is None:
+        return
     save_metadata(metadata)
     table_path(table_name).unlink(missing_ok=True)
     print(f"Таблица {table_name} успешно удалена")
 
 
+@log_time
 def _insert(arguments: list[str]) -> None:
     if len(arguments) < 3 or arguments[0].lower() != "into":
         raise ValueError("Использование: insert into <таблица> values (<значения>)")
@@ -106,10 +114,13 @@ def _insert(arguments: list[str]) -> None:
     values = parse_insert_values(arguments[3:], metadata[table_name])
     table_data = load_table_data(table_name)
     updated_data = core.insert(metadata, table_name, values, table_data)
+    if updated_data is None:
+        return
     save_table_data(table_name, updated_data)
     print(f"Запись с ID={updated_data[-1][ID_COLUMN]} успешно добавлена в таблицу {table_name}.")
 
 
+@log_time
 def _select(arguments: list[str]) -> None:
     if len(arguments) < 2 or arguments[0].lower() != "from":
         raise ValueError("Использование: select from <таблица> [where <условие>]")
@@ -124,7 +135,14 @@ def _select(arguments: list[str]) -> None:
             raise ValueError("Условие должно следовать за where")
     where_clause = parse_conditions(where_tokens, metadata[table_name])
     table_data = load_table_data(table_name)
-    _print_rows(metadata[table_name], core.select(table_data, where_clause))
+    cache_key = (
+        table_name,
+        tuple(sorted(where_clause.items())),
+        json.dumps(table_data, sort_keys=True),
+    )
+    rows = cache_result(cache_key, lambda: core.select(table_data, where_clause))
+    if rows is not None:
+        _print_rows(metadata[table_name], rows)
 
 
 def _update(arguments: list[str]) -> None:
@@ -145,6 +163,8 @@ def _update(arguments: list[str]) -> None:
     updated_data = core.update(
         table_data, set_clause, where_clause, metadata[table_name]
     )
+    if updated_data is None:
+        return
     save_table_data(table_name, updated_data)
     print(f"Данные таблицы {table_name} успешно обновлены")
 
@@ -162,6 +182,8 @@ def _delete(arguments: list[str]) -> None:
     where_clause = parse_conditions(where_tokens, metadata[table_name])
     table_data = load_table_data(table_name)
     updated_data = core.delete(table_data, where_clause)
+    if updated_data is None:
+        return
     save_table_data(table_name, updated_data)
     print(f"Записи из таблицы {table_name} успешно удалены")
 
