@@ -1,19 +1,20 @@
 import json
 from pathlib import Path
 
-from primitive_db.constants import DATA_DIR, META_FILE
+from primitive_db.constants import DATA_DIR
 
 
-def load_metadata() -> dict:
-    if not META_FILE.exists():
+def load_metadata(filepath: str | Path) -> dict:
+    path = Path(filepath)
+    if not path.exists():
         return {}
-    return json.loads(META_FILE.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
-def save_metadata(metadata: dict) -> None:
-    META_FILE.write_text(
-        json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+def save_metadata(filepath: str | Path, metadata: dict) -> None:
+    path = Path(filepath)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def table_path(table_name: str) -> Path:

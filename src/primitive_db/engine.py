@@ -4,7 +4,7 @@ import prompt
 from prettytable import PrettyTable
 
 from primitive_db import core
-from primitive_db.constants import ID_COLUMN
+from primitive_db.constants import ID_COLUMN, META_FILE
 from primitive_db.decorators import create_cacher, handle_db_errors, log_time
 from primitive_db.parser import (
     parse_columns,
@@ -57,7 +57,7 @@ def execute(command: str) -> bool:
     elif action in {"drop", "drop_table"}:
         _drop_table(arguments)
     elif action in {"list_tables", "tables"}:
-        print("\n".join(core.list_tables(load_metadata())) or "Таблиц нет")
+        print("\n".join(core.list_tables(load_metadata(META_FILE))) or "Таблиц нет")
     elif action == "insert":
         _insert(arguments)
     elif action == "select":
@@ -79,10 +79,12 @@ def _create_table(arguments: list[str]) -> None:
     if not arguments:
         raise ValueError("Не указано имя таблицы")
     table_name, *column_tokens = arguments
-    metadata = core.create_table(load_metadata(), table_name, parse_columns(column_tokens))
+    metadata = core.create_table(
+        load_metadata(META_FILE), table_name, parse_columns(column_tokens)
+    )
     if metadata is None:
         return
-    save_metadata(metadata)
+    save_metadata(META_FILE, metadata)
     save_table_data(table_name, [])
     print(f"Таблица {table_name} успешно создана")
 
@@ -93,10 +95,10 @@ def _drop_table(arguments: list[str]) -> None:
     if len(arguments) != 1:
         raise ValueError("Укажите имя одной таблицы")
     table_name = arguments[0]
-    metadata = core.drop_table(load_metadata(), table_name)
+    metadata = core.drop_table(load_metadata(META_FILE), table_name)
     if metadata is None:
         return
-    save_metadata(metadata)
+    save_metadata(META_FILE, metadata)
     table_path(table_name).unlink(missing_ok=True)
     print(f"Таблица {table_name} успешно удалена")
 
@@ -108,7 +110,7 @@ def _insert(arguments: list[str]) -> None:
     table_name = arguments[1]
     if arguments[2].lower() != "values":
         raise ValueError("После имени таблицы ожидается values")
-    metadata = load_metadata()
+    metadata = load_metadata(META_FILE)
     if table_name not in metadata:
         raise KeyError(f"Таблица {table_name} не найдена")
     values = parse_insert_values(arguments[3:], metadata[table_name])
@@ -125,7 +127,7 @@ def _select(arguments: list[str]) -> None:
     if len(arguments) < 2 or arguments[0].lower() != "from":
         raise ValueError("Использование: select from <таблица> [where <условие>]")
     table_name, *condition_tokens = arguments[1:]
-    metadata = load_metadata()
+    metadata = load_metadata(META_FILE)
     if table_name not in metadata:
         raise KeyError(f"Таблица {table_name} не найдена")
     where_tokens = []
@@ -149,7 +151,7 @@ def _update(arguments: list[str]) -> None:
     if not arguments:
         raise ValueError("Использование: update <таблица> set ... where ...")
     table_name, *clauses = arguments
-    metadata = load_metadata()
+    metadata = load_metadata(META_FILE)
     if table_name not in metadata:
         raise KeyError(f"Таблица {table_name} не найдена")
     set_tokens, where_tokens = split_keyword(clauses, "where")
@@ -173,7 +175,7 @@ def _delete(arguments: list[str]) -> None:
     if len(arguments) < 4 or arguments[0].lower() != "from":
         raise ValueError("Использование: delete from <таблица> where <условие>")
     table_name, *clauses = arguments[1:]
-    metadata = load_metadata()
+    metadata = load_metadata(META_FILE)
     if table_name not in metadata:
         raise KeyError(f"Таблица {table_name} не найдена")
     before_where, where_tokens = split_keyword(clauses, "where")
@@ -192,7 +194,7 @@ def _show_info(arguments: list[str]) -> None:
     if len(arguments) != 1:
         raise ValueError("Использование: info <таблица>")
     table_name = arguments[0]
-    metadata = load_metadata()
+    metadata = load_metadata(META_FILE)
     if table_name not in metadata:
         raise KeyError(f"Таблица {table_name} не найдена")
     schema = metadata[table_name]
